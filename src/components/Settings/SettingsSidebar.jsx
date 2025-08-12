@@ -1,4 +1,4 @@
-import { User, Palette, ArrowLeft, Package } from "lucide-react";
+import { User, Palette, ArrowLeft, Package, Terminal } from "lucide-react";
 import { Button } from "../ui/button";
 
 export const SettingsSidebar = ({ currentTab, onTabChange, onBack }) => {
@@ -20,6 +20,12 @@ export const SettingsSidebar = ({ currentTab, onTabChange, onBack }) => {
       label: "账户",
       icon: User,
       description: "用户信息和账户管理"
+    },
+    {
+      id: "console",
+      label: "控制台",
+      icon: Terminal,
+      description: "内嵌命令行终端"
     }
   ];
 

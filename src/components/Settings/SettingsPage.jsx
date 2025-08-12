@@ -3,6 +3,7 @@ import { SettingsSidebar } from "./SettingsSidebar";
 import { PersonalizationSettings } from "./PersonalizationSettings";
 import { ComponentSettings } from "./ComponentSettings";
 import { AccountSettings } from "./AccountSettings";
+import { ConsoleSettings } from "./ConsoleSettings";
 import { useSettings } from "../../hooks/useSettings";
 
 export const SettingsPage = ({ onBack }) => {
@@ -30,6 +31,8 @@ export const SettingsPage = ({ onBack }) => {
         return <ComponentSettings />;
       case "account":
         return <AccountSettings />;
+      case "console":
+        return <ConsoleSettings />;
       default:
         return (
           <div className="flex-1 p-6 flex items-center justify-center">

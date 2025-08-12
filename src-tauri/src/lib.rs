@@ -410,6 +410,210 @@ async fn execute_cmcl_interactive_command(args: Vec<String>, _inputs: Vec<String
     }
 }
 
+// 执行CMD命令（用于控制台）
+#[tauri::command]
+async fn execute_cmd_command(command: String) -> Result<CommandResult, String> {
+    // 在Windows上执行CMD命令
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = Command::new("cmd.exe");
+        cmd.arg("/c")
+           .arg(&command)
+           .stdout(Stdio::piped())
+           .stderr(Stdio::piped());
+        
+        // 设置环境变量以确保正确的编码
+        cmd.env("CHCP", "65001");
+        
+        let output = cmd.output().map_err(|e| format!("执行命令失败: {}", e))?;
+        
+        // 尝试使用UTF-8解码，如果失败则使用GBK（Windows中文编码）
+        let stdout = if let Ok(utf8_str) = String::from_utf8(output.stdout.clone()) {
+            utf8_str
+        } else {
+            #[cfg(target_os = "windows")]
+            {
+                match encoding_rs::GBK.decode(&output.stdout).0.into_owned() {
+                    decoded => decoded,
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                String::from_utf8_lossy(&output.stdout).to_string()
+            }
+        };
+        
+        let stderr = if let Ok(utf8_str) = String::from_utf8(output.stderr.clone()) {
+            utf8_str
+        } else {
+            #[cfg(target_os = "windows")]
+            {
+                match encoding_rs::GBK.decode(&output.stderr).0.into_owned() {
+                    decoded => decoded,
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                String::from_utf8_lossy(&output.stderr).to_string()
+            }
+        };
+        
+        let success = output.status.success();
+        let combined_output = if !stdout.is_empty() { 
+            stdout 
+        } else if !stderr.is_empty() { 
+            stderr.clone() 
+        } else { 
+            "命令执行完成".to_string() 
+        };
+        
+        Ok(CommandResult {
+            success,
+            output: combined_output,
+            error: if success { None } else { Some(stderr) },
+        })
+    }
+
+    // 为macOS和Linux提供备用实现
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+           .arg(&command)
+           .stdout(Stdio::piped())
+           .stderr(Stdio::piped());
+        
+        let output = cmd.output().map_err(|e| format!("执行命令失败: {}", e))?;
+        
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        
+        let success = output.status.success();
+        let combined_output = if !stdout.is_empty() { 
+            stdout 
+        } else if !stderr.is_empty() { 
+            stderr.clone() 
+        } else { 
+            "命令执行完成".to_string() 
+        };
+        
+        Ok(CommandResult {
+            success,
+            output: combined_output,
+            error: if success { None } else { Some(stderr) },
+        })
+    }
+}
+
+// 执行交互式CMD命令（支持stdin输入）
+#[tauri::command]
+async fn execute_cmd_interactive_command(command: String, inputs: Vec<String>) -> Result<CommandResult, String> {
+    // 在Windows上执行CMD命令
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = Command::new("cmd.exe");
+        cmd.arg("/c")
+           .arg(&command)
+           .stdin(Stdio::piped())
+           .stdout(Stdio::piped())
+           .stderr(Stdio::piped());
+        
+        // 设置环境变量以确保正确的编码
+        cmd.env("CHCP", "65001");
+        
+        let mut child = cmd.spawn().map_err(|e| format!("启动命令失败: {}", e))?;
+        
+        // 如果有输入数据，写入stdin
+        if !inputs.is_empty() {
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                for input in inputs {
+                    writeln!(stdin, "{}", input).map_err(|e| format!("写入输入失败: {}", e))?;
+                }
+                drop(stdin); // 关闭stdin，让程序知道输入结束
+            }
+        }
+        
+        let output = child.wait_with_output().map_err(|e| format!("等待命令完成失败: {}", e))?;
+        
+        // 尝试使用UTF-8解码，如果失败则使用GBK（Windows中文编码）
+        let stdout = if let Ok(utf8_str) = String::from_utf8(output.stdout.clone()) {
+            utf8_str
+        } else {
+            match encoding_rs::GBK.decode(&output.stdout).0.into_owned() {
+                decoded => decoded,
+            }
+        };
+        
+        let stderr = if let Ok(utf8_str) = String::from_utf8(output.stderr.clone()) {
+            utf8_str
+        } else {
+            match encoding_rs::GBK.decode(&output.stderr).0.into_owned() {
+                decoded => decoded,
+            }
+        };
+        
+        let success = output.status.success();
+        let combined_output = if !stdout.is_empty() { 
+            stdout 
+        } else if !stderr.is_empty() { 
+            stderr.clone() 
+        } else { 
+            "命令执行完成".to_string() 
+        };
+        
+        Ok(CommandResult {
+            success,
+            output: combined_output,
+            error: if success { None } else { Some(stderr) },
+        })
+    }
+
+    // 为macOS和Linux提供备用实现
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+           .arg(&command)
+           .stdin(Stdio::piped())
+           .stdout(Stdio::piped())
+           .stderr(Stdio::piped());
+        
+        let mut child = cmd.spawn().map_err(|e| format!("启动命令失败: {}", e))?;
+        
+        // 如果有输入数据，写入stdin
+        if !inputs.is_empty() {
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                for input in inputs {
+                    writeln!(stdin, "{}", input).map_err(|e| format!("写入输入失败: {}", e))?;
+                }
+                drop(stdin);
+            }
+        }
+        
+        let output = child.wait_with_output().map_err(|e| format!("等待命令完成失败: {}", e))?;
+        
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        
+        let success = output.status.success();
+        let combined_output = if !stdout.is_empty() { 
+            stdout 
+        } else if !stderr.is_empty() { 
+            stderr.clone() 
+        } else { 
+            "命令执行完成".to_string() 
+        };
+        
+        Ok(CommandResult {
+            success,
+            output: combined_output,
+            error: if success { None } else { Some(stderr) },
+        })
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -425,7 +629,9 @@ pub fn run() {
             open_java_download,
             open_eula,
             execute_cmcl_command,
-            execute_cmcl_interactive_command
+            execute_cmcl_interactive_command,
+            execute_cmd_command,
+            execute_cmd_interactive_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
